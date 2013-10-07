@@ -9,7 +9,7 @@ describe ScmWorkspace do
 
   before(:all) do
     @tmp_workspace = Dir.mktmpdir
-    @scm_workspace = ScmWorkspace.new(workspace: @tmp_workspace)
+    @scm_workspace = ScmWorkspace.new(workspace: File.join(@tmp_workspace, "workspace"))
   end
   after(:all){ FileUtils.remove_entry_secure(@tmp_workspace) }
 
@@ -25,7 +25,7 @@ describe ScmWorkspace do
 
     context "before configuring" do
       before do
-        FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+        @scm_workspace.clear
       end
       subject{ @scm_workspace }
 
@@ -48,7 +48,7 @@ describe ScmWorkspace do
 
     context "after configuring" do
       before(:all) do
-        FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+        @scm_workspace.clear
         @scm_workspace.configure(@url)
       end
       subject{ @scm_workspace }
@@ -85,7 +85,7 @@ describe ScmWorkspace do
     describe :checkout do
       context "another branch" do
         before(:all) do
-          FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+          @scm_workspace.clear
           @scm_workspace.configure(@url)
           @scm_workspace.checkout("0.1")
         end
@@ -96,7 +96,7 @@ describe ScmWorkspace do
 
       context "branch is updated" do
         before(:all) do
-          FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+          @scm_workspace.clear
           @scm_workspace.configure(@url)
           Dir.chdir(@scm_workspace.repo_dir) do
             # バージョンを巻き戻す
@@ -115,7 +115,7 @@ describe ScmWorkspace do
       %w[v0.0.1 v0.0.2 v0.1.0].each do |tag|
         context "#{tag} in develop" do
           before(:all) do
-            FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+            @scm_workspace.clear
             @scm_workspace.configure(@url)
             @scm_workspace.checkout("develop")
             @scm_workspace.move(tag)
@@ -127,7 +127,7 @@ describe ScmWorkspace do
       end
       context "reset to fix wrong reset" do
         before(:all) do
-          FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+          @scm_workspace.clear
           @scm_workspace.configure(@url)
           @scm_workspace.checkout("develop")
           @scm_workspace.move("v0.1.0")
@@ -145,7 +145,7 @@ describe ScmWorkspace do
 
     describe :clear do
       before(:all) do
-        FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+        @scm_workspace.clear
         @scm_workspace.configure(@url)
       end
 
@@ -153,7 +153,8 @@ describe ScmWorkspace do
         @scm_workspace.cleared?.should == false
         @scm_workspace.clear
         @scm_workspace.cleared?.should == true
-        Dir.exist?(@scm_workspace.repo_dir).should == false
+        Dir.exist?(@scm_workspace.repo_dir).should == true
+        Dir.exist?(File.join(@scm_workspace.repo_dir, ".git")).should == false
       end
     end
 
@@ -167,7 +168,7 @@ describe ScmWorkspace do
 
     context "after configuring" do
       before(:all) do
-        FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+        @scm_workspace.clear
         @scm_workspace.configure(@cloning_url)
       end
       subject{ @scm_workspace }
@@ -196,7 +197,7 @@ describe ScmWorkspace do
 
     context "duplicated configuration" do
       before(:all) do
-        FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+        @scm_workspace.clear
         @scm_workspace.configure(@cloning_url)
       end
       subject{ @scm_workspace }
@@ -213,7 +214,7 @@ describe ScmWorkspace do
 
         context branch_name do
           before(:all) do
-            FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+            @scm_workspace.clear
             @scm_workspace.configure(@cloning_url)
             @scm_workspace.checkout(branch_name)
           end
@@ -226,7 +227,7 @@ describe ScmWorkspace do
 
       context "branch is updated" do
         before(:all) do
-          FileUtils.remove_entry_secure(@scm_workspace.repo_dir) if Dir.exist?(@scm_workspace.repo_dir)
+          @scm_workspace.clear
           @scm_workspace.configure(@cloning_url)
           @scm_workspace.checkout("trunk")
           Dir.chdir(@scm_workspace.repo_dir) do

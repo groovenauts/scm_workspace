@@ -17,7 +17,7 @@ class ScmWorkspace
   def initialize(config, options = {})
     @root = config[:workspace]
     @logger = options[:logger]
-    @verbose = options[:verbose]
+    @verbose = options[:verbose] || (ENV["VERBOSE"] =~ /true|yes|on/)
     @svn_branch_prefix = options[:svn_branch_prefix] || ENV["SVN_BRANCH_PREFIX"] || "branches"
   end
 
@@ -31,8 +31,11 @@ class ScmWorkspace
   end
 
   def configure(url)
-    raise "#{repo_dir} is not empty. You must clear it" if configured?
-    raise "#{root} does not exist" unless Dir.exist?(root)
+    if configured?
+      msg = "#{repo_dir} is not empty. You must clear it"
+      msg << "\nls -la #{repo_dir}" << `ls -la #{repo_dir}` if verbose
+      raise msg
+    end
     url, opt = url.split(/\s+/, 2)
     scm_type = self.class.guess_scm_type(url)
     case scm_type
@@ -44,7 +47,8 @@ class ScmWorkspace
       @git = Git.clone(url, repo_dir)
     when :svn then
       Dir.chdir(@root) do
-        cmd = "git svn clone #{url} #{repo_dir} #{opt} > /dev/null 2>&1"
+        cmd = "git svn clone #{url} #{repo_dir} #{opt}"
+        cmd << " > /dev/null 2>&1" unless verbose
         logger.info("*" * 100)
         logger.info("SCM configure")
         puts_info "cd #{@root} && " + cmd
@@ -57,7 +61,13 @@ class ScmWorkspace
   end
 
   def clear
-    FileUtils.remove_entry_secure(repo_dir) if Dir.exist?(repo_dir)
+    return unless Dir.exist?(repo_dir)
+    Dir.chdir(repo_dir) do
+      (Dir.glob("*") + Dir.glob(".*")).each do |d|
+        next if d =~ /\A\.+\Z/
+        FileUtils.remove_entry_secure(d)
+      end
+    end
   end
 
   def checkout(branch_name)
@@ -212,11 +222,11 @@ class ScmWorkspace
 
 
   def repo_dir
-    File.join(@root, "workspace")
+    @root
   end
 
   def configured?
-    Dir.exist?(repo_dir)
+    Dir.exist?(File.join(repo_dir, ".git"))
   end
 
   def cleared?
