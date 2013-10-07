@@ -12,9 +12,13 @@ class ScmWorkspace
 
   attr_reader :root
   attr_writer :logger
+  attr_accessor :svn_branch_prefix
+  attr_accessor :verbose
   def initialize(config, options = {})
     @root = config[:workspace]
     @logger = options[:logger]
+    @verbose = options[:verbose]
+    @svn_branch_prefix = options[:svn_branch_prefix] || ENV["SVN_BRANCH_PREFIX"] || "branches"
   end
 
   def logger
@@ -23,7 +27,7 @@ class ScmWorkspace
 
   def puts_info(msg)
     logger.info(msg)
-    $stdout.puts(msg)
+    $stdout.puts(msg) if verbose
   end
 
   def configure(url)
@@ -31,9 +35,6 @@ class ScmWorkspace
     raise "#{root} does not exist" unless Dir.exist?(root)
     url, opt = url.split(/\s+/, 2)
     scm_type = self.class.guess_scm_type(url)
-    options = opt ? parse_options(opt, scm_type) : {}
-    options['url'] = url
-    save_options(options)
     case scm_type
     when :git then
       logger.info("*" * 100)
@@ -57,7 +58,6 @@ class ScmWorkspace
 
   def clear
     FileUtils.remove_entry_secure(repo_dir) if Dir.exist?(repo_dir)
-    FileUtils.rm(options_path) if File.exist?(options_path)
   end
 
   def checkout(branch_name)
@@ -169,20 +169,39 @@ class ScmWorkspace
   def current_branch_name
     return nil unless configured?
     case scm_type
-    when :git then
-      logger.info("-" * 100)
-      r = git.log.first.name
-      logger.info("current_branch_name: #{r.inspect}")
-      r
-    when :svn then
-      info = svn_info
-      r = info[:url].sub(info[:repository_root], '')
-      r.sub!(/\A\//, '')
-      if branch_prefix = load_options['branches']
-        r.sub!(branch_prefix + "/", '')
-      end
-      r
+    when :git then git_current_branch_name
+    when :svn then svn_current_branch_name
     end
+  end
+
+  def git_current_branch_name(dir = repo_dir)
+    return nil unless Dir.exist?(dir)
+    Dir.chdir(dir) do
+      # http://qiita.com/sugyan/items/83e060e895fa8ef2038c
+      result = `git symbolic-ref --short HEAD`.strip
+      return result unless result.nil? || result.empty?
+      result = `git status`.scan(/On branch\s*(.+)\s*$/).flatten.first
+      return result unless result.nil? || result.empty?
+      work = `git log --decorate -1`.scan(/^commit\s[0-9a-f]+\s\((.+)\)/).
+        flatten.first.split(/,/).map(&:strip).reject{|s| s =~ /HEAD\Z/}
+      r = work.select{|s| s =~ /origin\//}.first
+      r ||= work.first
+      result = r.sub(/\Aorigin\//, '')
+      return result
+    end
+  rescue => e
+    # puts "[#{e.class}] #{e.message}"
+    # puts "Dir.pwd: #{Dir.pwd}"
+    # puts "git status\n" << `git status`
+    raise e
+  end
+
+  def svn_current_branch_name
+    info = svn_info
+    r = info[:url].sub(info[:repository_root], '')
+    r.sub!(/\A\//, '')
+    r.sub!(svn_branch_prefix + "/", '')
+    r
   end
 
   def current_tag_names
@@ -194,10 +213,6 @@ class ScmWorkspace
 
   def repo_dir
     File.join(@root, "workspace")
-  end
-
-  def options_path
-    File.join(@root, "options.yml")
   end
 
   def configured?
@@ -235,32 +250,6 @@ class ScmWorkspace
       'c' => 'config',
     }
   }
-
-  def parse_options(opt, scm_type)
-    # "-T trunk --branches branches --tags tags -hoge --on" という文字列を
-    #   [["-T", "trunk"], ["--branches", "branches"], ["--tags", "tags"], ["-hoge", nil], ["--on", nil]]
-    # という風に分割します
-    key_values = opt.scan(/(-[^\s]+)(?:\=|\s+)?([^-][^\s]+)?/)
-    result = key_values.each_with_object({}){|(k,v), d| d[k.sub(/\A-{1,2}/, '').gsub(/-/, '_')] = v }
-    CONFIGURE_OPTIONS[scm_type].each do |short_key, long_key|
-      if v = result.delete(short_key)
-        result[long_key] = v
-      end
-    end
-    result
-  end
-
-  def save_options(hash)
-    open(options_path, "w") do |f|
-      YAML.dump(hash, f)
-    end
-  end
-
-  def load_options
-    return {} unless File.readable?(options_path)
-    YAML.load_file(options_path)
-  end
-  alias_method :options, :load_options
 
   def git_repo?
     return nil unless configured?
