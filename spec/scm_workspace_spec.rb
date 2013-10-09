@@ -78,6 +78,13 @@ describe ScmWorkspace do
         }
       end
 
+      it{ subject.contains?("a0eaf8cca31080ca26edbae0daddaa9931edd6d6").should be_true }
+      it{ subject.contains?("v0.0.2").should be_true }
+      it{ subject.contains?("v0.0.0").should be_false }
+      # it{ subject.contains?("master").should be_true }
+      it{ subject.contains?("develop").should be_true }
+      it{ subject.contains?("removed").should be_false }
+
       it :fetch do
         @scm_workspace.fetch
       end

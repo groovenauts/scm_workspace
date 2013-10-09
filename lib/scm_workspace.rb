@@ -263,6 +263,10 @@ class ScmWorkspace
     !configured?
   end
 
+  def contains?(obj)
+    !!system_at_root!("git show #{obj} --oneline --quiet") rescue false
+  end
+
   CONFIGURE_OPTIONS = {
     svn: {
       "A" => "authors_file",
