@@ -10,6 +10,9 @@ require "scm_workspace/version"
 
 class ScmWorkspace
 
+  class Error < StandardError
+  end
+
   attr_reader :root
   attr_writer :logger
   attr_accessor :svn_branch_prefix
@@ -30,6 +33,30 @@ class ScmWorkspace
     $stdout.puts(msg) if verbose
   end
 
+  def system!(cmd)
+    logger.info("executing: #{cmd}")
+    buf = []
+    IO.popen("#{cmd} 2>&1") do |io|
+      while line = io.gets
+        # puts line
+        buf << line
+      end
+    end
+
+    if $?.exitstatus == 0
+      logger.info("\e[33mSUCCESS: %s\e[0m" % cmd)
+      return buf.join
+    else
+      msg = "\e[31mFAILURE: %s\n%s\e[0m" % [cmd, buf.join.strip]
+      logger.error(msg)
+      raise Error, msg
+    end
+  end
+
+  def system_at_root!(cmd)
+    Dir.chdir(root){ system!(cmd) }
+  end
+
   def configure(url)
     if configured?
       msg = "#{repo_dir} is not empty. You must clear it"
@@ -42,9 +69,7 @@ class ScmWorkspace
     when :git then
       logger.info("*" * 100)
       logger.info("SCM configure")
-      puts_info "git clone #{url} #{repo_dir}"
-      require 'git'
-      @git = Git.clone(url, repo_dir)
+      system!("git clone #{url} #{repo_dir} #{opt}")
     when :svn then
       Dir.chdir(@root) do
         cmd = "git svn clone #{url} #{repo_dir} #{opt}"
@@ -54,7 +79,6 @@ class ScmWorkspace
         puts_info "cd #{@root} && " + cmd
         system(cmd)
       end
-      @git = nil
     else
       raise "Unknown SCM type: #{url}"
     end
@@ -72,42 +96,35 @@ class ScmWorkspace
 
   def checkout(branch_name)
     logger.info("-" * 100)
-    puts_info "git checkout #{branch_name}"
-    git.checkout(branch_name)
+    system_at_root!("git checkout #{branch_name}")
     case scm_type
-    when :git then
-      puts_info "git reset --hard origin/#{branch_name}"
-      git.reset_hard("origin/#{branch_name}")
+    when :git then system_at_root!("git reset --hard origin/#{branch_name}")
     end
   end
 
   def reset_hard(tag)
+    logger.info("-" * 100)
     case scm_type
-    when :git then
-      logger.info("-" * 100)
-      puts_info("git reset --hard #{tag}")
-      git.reset_hard(tag)
+    when :git then system_at_root!("git reset --hard #{tag}")
     when :svn then raise "Illegal operation for svn"
     end
   end
   alias_method :move, :reset_hard
 
   def fetch
+    logger.info("-" * 100)
     case scm_type
-    when :git then
-      logger.info("-" * 100)
-      puts_info("git fetch origin")
-      git.fetch("origin")
-    when :svn then in_repo_dir{ system("git svn fetch") }
+    when :git then system_at_root!("git fetch origin")
+    when :svn then system_at_root!("git svn fetch")
     end
   end
 
   def status
+    logger.info("-" * 100)
     case scm_type
     when :git then
-      logger.info("-" * 100)
-      puts_info("git status")
-      status_text = in_repo_dir{ `git status` }
+      # puts_info("git status")
+      status_text = system_at_root!("git status") # in_repo_dir{ `git status` }
       value = status_text.scan(/Your branch is behind 'origin\/#{current_branch_name}' by (\d+\s+commits)/)
       if value && !value.empty?
         "There is/are #{value.flatten.join}"
@@ -115,28 +132,26 @@ class ScmWorkspace
         "everything is up-to-dated."
       end
     when :svn then
-      current_sha = git.log.first.sha
-      status_text = in_repo_dir{
-        cmd = "git log --branches --oneline #{current_sha}.."
-        puts_info cmd
-        `#{cmd}`
-      }
+      status_text = system_at_root!("git log --branches --oneline #{current_sha}..")
       lines = status_text.split(/\n/)
       if lines.empty?
         "everything is up-to-dated."
       else
         latest_sha = lines.first
-        "There is/are #{lines.length} commits." + in_repo_dir{
-          " current revision: " << `git svn find-rev #{current_sha}`.strip <<
-          " latest revision: " << `git svn find-rev #{latest_sha}`.strip
-        }
+        "There is/are #{lines.length} commits." <<
+          " current revision: " << system_at_root!("git svn find-rev #{current_sha}").strip <<
+          " latest revision: "  << system_at_root!("git svn find-rev #{latest_sha}").strip
       end
     end
   end
 
+  def current_sha
+    system_at_root!("git log -1").scan(/^commit ([0-9a-f]+)$/).flatten.first
+  end
+
   def current_commit_key
     return nil unless configured?
-    result = git.log.first.sha
+    result = current_sha
     case scm_type
     when :svn then
       rev = nil
@@ -155,23 +170,30 @@ class ScmWorkspace
     return nil unless configured?
     case scm_type
     when :git then
-      result = git.branches.remote.map(&:full).map{|path| path.sub(/\Aremotes\/origin\//, '')}
+      result = system_at_root!("git branch -r").lines.map{|path| path.sub(/\A\s*origin\//, '').strip }
       result.delete_if{|name| name =~ /\AHEAD ->/}
       result
     when :svn then
-      git.branches.remote.map(&:full).map{|path| path.sub(/\Aremotes\//, '')}
+      system_at_root!("git branch -r").lines.map{|path| path.strip }
+    end
+  end
+
+  def remotes
+    system_at_root!("git remote -v show").lines.each_with_object({}) do |line, d|
+      name, url, other = line.strip.split(/[\t\s]+/, 3)
+      d[name] = url
     end
   end
 
   def tag_names
     return nil unless configured?
-    git.tags.map(&:name).uniq
+    system_at_root!("git tag").lines.map{|path| path.strip.strip }
   end
 
   def url
     return nil unless configured?
     case scm_type
-    when :git then git.remote("origin").url
+    when :git then remotes["origin"]
     when :svn then svn_info[:repository_root]
     end
   end
@@ -216,8 +238,7 @@ class ScmWorkspace
 
   def current_tag_names
     return nil unless configured?
-    log = git.log.first
-    git.tags.select{|b| b.log.first.sha == log.sha}.map(&:name)
+    system_at_root!("git describe --tags #{current_sha}").lines.map(&:strip) rescue []
   end
 
 
@@ -231,11 +252,6 @@ class ScmWorkspace
 
   def cleared?
     !configured?
-  end
-
-  def git
-    require 'git'
-    @git ||= Git.open(repo_dir, log: logger)
   end
 
   CONFIGURE_OPTIONS = {
@@ -263,7 +279,7 @@ class ScmWorkspace
 
   def git_repo?
     return nil unless configured?
-    !git.remotes.empty? rescue false
+    !remotes.empty? rescue false
   end
 
   def svn_repo?
@@ -279,18 +295,16 @@ class ScmWorkspace
   end
 
   def svn_info
-    in_repo_dir do
-      txt = `git svn info`
-      return txt.scan(/^(.+?): (.*)$/).each_with_object({}){|(k,v), d| d[k.downcase.gsub(/\s/, '_').to_sym] = v }
-    end
+    txt = system_at_root!("git svn info")
+    return txt.scan(/^(.+?): (.*)$/).each_with_object({}){|(k,v), d| d[k.downcase.gsub(/\s/, '_').to_sym] = v }
   end
 
-  def in_repo_dir
+  def in_root
     Dir.chdir(repo_dir) do
       return yield
     end
   end
-
+  alias_method :in_repo_dir, :in_root
 
   class << self
     def guess_scm_type(url)
