@@ -166,6 +166,15 @@ class ScmWorkspace
     result
   end
 
+  def commit_info
+    {
+      "scm_type" => scm_type.to_s,
+      "url" => url,
+      "branch" => current_branch_name,
+      "commit_key" => current_commit_key
+    }
+  end
+
   def branch_names
     return nil unless configured?
     case scm_type

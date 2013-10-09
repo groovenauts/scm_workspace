@@ -69,6 +69,15 @@ describe ScmWorkspace do
 
       its(:current_commit_key){ should == "a0eaf8cca31080ca26edbae0daddaa9931edd6d6" }
 
+      its(:commit_info) do
+        should == {
+          "scm_type" => "git",
+          "url" => @url,
+          "branch" => "develop",
+          "commit_key" => "a0eaf8cca31080ca26edbae0daddaa9931edd6d6",
+        }
+      end
+
       it :fetch do
         @scm_workspace.fetch
       end
@@ -189,6 +198,11 @@ describe ScmWorkspace do
 
       # git svn だと SHAはcloneするたびに変わるので末尾のSVNのリビジョン番号をチェックします
       its(:current_commit_key){ should =~ /\A[0-9a-f]{40}:247\Z/ }
+
+      it{ subject.commit_info["scm_type"] == "svn" }
+      it{ subject.commit_info["url"] == @url }
+      it{ subject.commit_info["branch"] == "trunk" }
+      it{ subject.commit_info["commit_key"] =~ /\A[0-9a-f]{40}:247\Z/ }
 
       it :fetch do
         @scm_workspace.fetch
