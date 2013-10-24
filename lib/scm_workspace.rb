@@ -7,6 +7,7 @@ require 'tengine/support/core_ext/hash/deep_dup'
 require 'tengine/support/null_logger'
 
 require "scm_workspace/version"
+require "scm_workspace/core_ext/fileutils"
 
 class ScmWorkspace
 
@@ -28,9 +29,8 @@ class ScmWorkspace
     @logger ||= Tengine::Support::NullLogger.new
   end
 
-  def puts_info(msg)
-    logger.info(msg)
-    $stdout.puts(msg) if verbose
+  def fileutils
+    @fileutils ||= FileUtils.with_logger(logger)
   end
 
   def system!(cmd)
@@ -44,8 +44,11 @@ class ScmWorkspace
     end
 
     if $?.exitstatus == 0
-      logger.info("\e[33mSUCCESS: %s\e[0m" % cmd)
-      return buf.join
+      msg = "\e[33mSUCCESS: %s\e[0m" % cmd
+      r = buf.join
+      msg << "\n" << r.strip if verbose
+      logger.info(msg)
+      return r
     else
       msg = "\e[31mFAILURE: %s\n%s\e[0m" % [cmd, buf.join.strip]
       logger.error(msg)
@@ -54,7 +57,9 @@ class ScmWorkspace
   end
 
   def system_at_root!(cmd)
-    Dir.chdir(root){ system!(cmd) }
+    fileutils.chdir(root) do
+      return system!(cmd)
+    end
   end
 
   def configure(url)
@@ -71,12 +76,11 @@ class ScmWorkspace
       logger.info("SCM configure")
       system!("git clone #{url} #{repo_dir} #{opt}")
     when :svn then
-      Dir.chdir(@root) do
+      fileutils.chdir(@root) do
         cmd = "git svn clone #{url} #{repo_dir} #{opt}"
         cmd << " > /dev/null 2>&1" unless verbose
         logger.info("*" * 100)
         logger.info("SCM configure")
-        puts_info "cd #{@root} && " + cmd
         system(cmd)
       end
     else
@@ -86,10 +90,10 @@ class ScmWorkspace
 
   def clear
     return unless Dir.exist?(repo_dir)
-    Dir.chdir(repo_dir) do
+    fileutils.chdir(repo_dir) do
       (Dir.glob("*") + Dir.glob(".*")).each do |d|
         next if d =~ /\A\.+\Z/
-        FileUtils.remove_entry_secure(d)
+        fileutils.remove_entry_secure(d)
       end
     end
   end
@@ -123,7 +127,6 @@ class ScmWorkspace
     logger.info("-" * 100)
     case scm_type
     when :git then
-      # puts_info("git status")
       status_text = system_at_root!("git status") # in_repo_dir{ `git status` }
       value = status_text.scan(/Your branch is behind 'origin\/#{current_branch_name}' by (\d+\s+commits)/)
       if value && !value.empty?
@@ -217,7 +220,7 @@ class ScmWorkspace
 
   def git_current_branch_name(dir = repo_dir)
     return nil unless Dir.exist?(dir)
-    Dir.chdir(dir) do
+    fileutils.chdir(dir) do
       # http://qiita.com/sugyan/items/83e060e895fa8ef2038c
       result = `git symbolic-ref --short HEAD`.strip
       return result unless result.nil? || result.empty?
@@ -313,7 +316,7 @@ class ScmWorkspace
   end
 
   def in_root
-    Dir.chdir(repo_dir) do
+    fileutils.chdir(repo_dir) do
       return yield
     end
   end
