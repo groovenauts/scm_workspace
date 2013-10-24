@@ -3,6 +3,18 @@ require 'logger'
 
 module FileUtils
 
+  def cd(dir, options = {}, &block) # :yield: dir
+    fu_check_options options, OPT_TABLE['cd']
+    fu_output_message "cd #{dir}" if options[:verbose]
+    r = Dir.chdir(dir, &block)
+    fu_output_message 'cd -' if options[:verbose] and block
+    r
+  end
+  module_function :cd
+
+  alias chdir cd
+  module_function :chdir
+
   class << self
     def with_logger(logger, level = :info)
       output = LoggerAdapter.new(logger, level)
