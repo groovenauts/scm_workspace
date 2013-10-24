@@ -57,9 +57,7 @@ class ScmWorkspace
   end
 
   def system_at_root!(cmd)
-    fileutils.chdir(root) do
-      return system!(cmd)
-    end
+    fileutils.chdir(root){ system!(cmd) }
   end
 
   def configure(url)
