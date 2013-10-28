@@ -28,7 +28,7 @@ class ScmWorkspace
 
   def configure(url)
     raise "#{repo_dir} is not empty. You must clear it" if configured?
-    raise "#{root} does not exist" unless Dir.exist?(root)
+    FileUtils.mkdir_p(root)
     url, opt = url.split(/\s+/, 2)
     scm_type = self.class.guess_scm_type(url)
     options = opt ? parse_options(opt, scm_type) : {}
