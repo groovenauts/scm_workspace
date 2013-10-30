@@ -61,7 +61,7 @@ class ScmWorkspace
   end
 
   def configure(url)
-    if configured?
+    unless empty?
       msg = "#{repo_dir} is not empty. You must clear it"
       msg << "\nls -la #{repo_dir}" << `ls -la #{repo_dir}` if verbose
       raise msg
@@ -87,12 +87,19 @@ class ScmWorkspace
   end
 
   def clear
-    return unless Dir.exist?(repo_dir)
-    fileutils.chdir(repo_dir) do
+    return unless Dir.exist?(root)
+    fileutils.chdir(root) do
       (Dir.glob("*") + Dir.glob(".*")).each do |d|
         next if d =~ /\A\.+\Z/
         fileutils.remove_entry_secure(d)
       end
+    end
+  end
+
+  def empty?
+    return true unless Dir.exist?(root)
+    fileutils.chdir(root) do
+      return (Dir.glob("*") + Dir.glob(".*")).reject{|d| d =~ /\A\.+\Z/}.empty?
     end
   end
 
@@ -147,11 +154,12 @@ class ScmWorkspace
   end
 
   def current_sha
+    return nil unless accessible?
     system_at_root!("git log -1").scan(/^commit ([0-9a-f]+)$/).flatten.first
   end
 
   def current_commit_key
-    return nil unless configured?
+    return nil unless accessible?
     result = current_sha
     case scm_type
     when :svn then
@@ -177,7 +185,7 @@ class ScmWorkspace
   end
 
   def branch_names
-    return nil unless configured?
+    return nil unless accessible?
     case scm_type
     when :git then
       result = system_at_root!("git branch -r").lines.map{|path| path.sub(/\A\s*origin\//, '').strip }
@@ -196,12 +204,12 @@ class ScmWorkspace
   end
 
   def tag_names
-    return nil unless configured?
+    return nil unless accessible?
     system_at_root!("git tag").lines.map{|path| path.strip.strip }
   end
 
   def url
-    return nil unless configured?
+    return nil unless accessible?
     case scm_type
     when :git then remotes["origin"]
     when :svn then svn_info[:repository_root]
@@ -209,7 +217,7 @@ class ScmWorkspace
   end
 
   def current_branch_name
-    return nil unless configured?
+    return nil unless accessible?
     case scm_type
     when :git then git_current_branch_name
     when :svn then svn_current_branch_name
@@ -247,7 +255,7 @@ class ScmWorkspace
   end
 
   def current_tag_names
-    return nil unless configured?
+    return nil unless accessible?
     system_at_root!("git describe --tags #{current_sha}").lines.map(&:strip) rescue []
   end
 
@@ -256,12 +264,24 @@ class ScmWorkspace
     @root
   end
 
+  # submoduleでない場合 true
+  # submoduleの場合     true
+  # gitの対象外の場合   false
+  def accessible?
+    File.exist?(File.join(repo_dir, ".git"))
+  end
+
+  # submoduleでない場合 true
+  # submoduleの場合     false
+  # gitの対象外の場合   false
   def configured?
     Dir.exist?(File.join(repo_dir, ".git"))
   end
 
+
   def cleared?
-    !configured?
+    # !configured?
+    empty?
   end
 
   def contains?(obj)
@@ -292,17 +312,17 @@ class ScmWorkspace
   }
 
   def git_repo?
-    return nil unless configured?
+    return nil unless accessible?
     !remotes.empty? rescue false
   end
 
   def svn_repo?
-    return nil unless configured?
+    return nil unless accessible?
     Dir.exist?(File.join(repo_dir, '.git', 'svn'))
   end
 
   def scm_type
-    return nil unless configured?
+    return nil unless accessible?
     return :git if git_repo?
     return :svn if svn_repo?
     nil
