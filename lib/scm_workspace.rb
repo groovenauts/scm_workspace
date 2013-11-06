@@ -99,7 +99,7 @@ class ScmWorkspace
 
   def empty?
     return true unless Dir.exist?(root)
-    fileutils.chdir(root) do
+    FileUtils.chdir(root) do
       return (Dir.glob("*") + Dir.glob(".*")).reject{|d| d =~ /\A\.+\Z/}.empty?
     end
   end
@@ -227,7 +227,7 @@ class ScmWorkspace
 
   def git_current_branch_name(dir = repo_dir)
     return nil unless Dir.exist?(dir)
-    fileutils.chdir(dir) do
+    FileUtils.chdir(dir) do
       # http://qiita.com/sugyan/items/83e060e895fa8ef2038c
       result = `git symbolic-ref --short HEAD`.strip
       return result unless result.nil? || result.empty?
