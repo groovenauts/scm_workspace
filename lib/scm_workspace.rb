@@ -91,6 +91,7 @@ class ScmWorkspace
     fileutils.chdir(root) do
       (Dir.glob("*") + Dir.glob(".*")).each do |d|
         next if d =~ /\A\.+\Z/
+        logger.info("remove_entry_secure #{d.inspect}")
         fileutils.remove_entry_secure(d)
       end
     end
