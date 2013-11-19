@@ -237,7 +237,7 @@ class ScmWorkspace
         flatten.first.split(/,/).map(&:strip).reject{|s| s =~ /HEAD\Z/}
       r = work.select{|s| s =~ /origin\//}.first
       r ||= work.first
-      result = r.sub(/\Aorigin\//, '')
+      result = r.nil? ? nil : r.sub(/\Aorigin\//, '')
       return result
     end
   rescue => e
